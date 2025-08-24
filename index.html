@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Wohnung Putzplan</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 10px;
+    }
+    .extra-controls {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    .kw-label {
+      font-size: 20px;
+      font-weight: bold;
+    }
+    .arrow, .ctrl-btn {
+      cursor: pointer;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      background: #2196f3;
+      color: white;
+      transition: background 0.2s;
+    }
+    .arrow:hover, .ctrl-btn:hover {
+      background: #1976d2;
+    }
+    .task {
+      background: white;
+      padding: 20px;
+      margin: 15px auto;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      width: 300px;
+      text-align: center;
+      transition: background 0.3s;
+    }
+    .task.done {
+      background: #c8e6c9;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 8px;
+      background: #2196f3;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #1976d2;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧹 Putzplan für die WG</h1>
+
+  <div class="controls">
+    <button class="arrow" id="prev">◀</button>
+    <span class="kw-label" id="kw"></span>
+    <button class="arrow" id="next">▶</button>
+  </div>
+
+  <div class="extra-controls">
+    <button class="ctrl-btn" id="today">Zur aktuellen KW</button>
+    <button class="ctrl-btn" id="export">Als PDF exportieren</button>
+  </div>
+
+  <div id="plan"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    const mitbewohner = ["Max", "Karol", "Louis", "Andreas"];
+    const aufgaben = ["Bad Putzen", "Küche Putzen"];
+
+    // Kalenderwoche berechnen
+    Date.prototype.getWeekNumber = function() {
+      const d = new Date(Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+      return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+    };
+
+    const thisWeek = new Date().getWeekNumber();
+    let currentWeek = thisWeek;
+
+    function getAssignments(week) {
+      const startIndex = week % mitbewohner.length; // Rotation
+      let available = [...mitbewohner];
+      let result = [];
+
+      aufgaben.forEach((aufgabe, i) => {
+        const index = (startIndex + i) % available.length;
+        const person = available[index];
+        result.push({ aufgabe, person });
+        available.splice(index, 1);
+      });
+
+      return result;
+    }
+
+    function renderPlan(week) {
+      document.getElementById("kw").textContent = "Kalenderwoche (KW) " + week;
+      const assignments = getAssignments(week);
+      const container = document.getElementById("plan");
+      container.innerHTML = "";
+
+      assignments.forEach(({aufgabe, person}) => {
+        const div = document.createElement("div");
+        div.className = "task";
+        div.innerHTML = `<h2>${aufgabe}</h2><p><strong>${person}</strong></p>`;
+
+        // Zustand aus localStorage laden
+        const storageKey = `done_${week}_${aufgabe}`;
+        if (localStorage.getItem(storageKey) === "true") {
+          div.classList.add("done");
+        }
+
+        const button = document.createElement("button");
+        button.textContent = "Aufgabe abgeschlossen";
+        button.onclick = () => {
+          div.classList.add("done");
+          localStorage.setItem(storageKey, "true");
+        };
+
+        div.appendChild(button);
+        container.appendChild(div);
+      });
+    }
+
+    document.getElementById("prev").onclick = () => {
+      currentWeek--;
+      if (currentWeek < 1) currentWeek = 52;
+      renderPlan(currentWeek);
+    };
+
+    document.getElementById("next").onclick = () => {
+      currentWeek++;
+      if (currentWeek > 52) currentWeek = 1;
+      renderPlan(currentWeek);
+    };
+
+    document.getElementById("today").onclick = () => {
+      currentWeek = thisWeek;
+      renderPlan(currentWeek);
+    };
+
+    document.getElementById("export").onclick = () => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      let y = 20;
+      doc.setFontSize(16);
+      doc.text("Putzplan für die WG", 20, y);
+      y += 10;
+
+      for (let w = thisWeek; w <= 52; w++) {
+        doc.setFontSize(14);
+        doc.text(`Kalenderwoche ${w}`, 20, y);
+        y += 8;
+
+        const assignments = getAssignments(w);
+        assignments.forEach(({aufgabe, person}) => {
+          const done = localStorage.getItem(`done_${w}_${aufgabe}`) === "true" ? "✔ erledigt" : "✘ offen";
+          doc.setFontSize(12);
+          doc.text(`- ${aufgabe}: ${person} [${done}]`, 25, y);
+          y += 6;
+        });
+
+        y += 4;
+        if (y > 270) { // neue Seite
+          doc.addPage();
+          y = 20;
+        }
+      }
+
+      doc.save("Putzplan.pdf");
+    };
+
+    renderPlan(currentWeek);
+  </script>
+</body>
+</html>
