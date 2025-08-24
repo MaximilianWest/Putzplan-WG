@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wohnung Putzplan</title>
   <style>
     body {
@@ -13,12 +14,19 @@
       text-align: center;
       margin-bottom: 10px;
     }
-    .controls, .extra-controls {
+    .controls {
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 15px;
-      margin-bottom: 15px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .extra-controls {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 25px;
       flex-wrap: wrap;
     }
     .kw-label {
@@ -30,11 +38,10 @@
       font-size: 16px;
       border: none;
       border-radius: 6px;
-      padding: 8px 14px;
+      padding: 6px 12px;
       background: #2196f3;
       color: white;
       transition: background 0.2s;
-      flex-shrink: 0;
     }
     .arrow:hover, .ctrl-btn:hover {
       background: #1976d2;
@@ -46,7 +53,7 @@
       border-radius: 10px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       width: 90%;
-      max-width: 400px;
+      max-width: 350px;
       text-align: center;
       transition: background 0.3s;
     }
@@ -67,20 +74,6 @@
     }
     button:hover {
       background: #1976d2;
-    }
-
-    /* Mobile Optimierungen */
-    @media (max-width: 600px) {
-      h1 {
-        font-size: 22px;
-      }
-      .kw-label {
-        font-size: 18px;
-      }
-      .arrow, .ctrl-btn {
-        font-size: 14px;
-        padding: 6px 10px;
-      }
     }
   </style>
 </head>
@@ -118,7 +111,7 @@
     let currentWeek = thisWeek;
 
     function getAssignments(week) {
-      const startIndex = week % mitbewohner.length; // Rotation
+      const startIndex = week % mitbewohner.length;
       let available = [...mitbewohner];
       let result = [];
 
@@ -132,6 +125,14 @@
       return result;
     }
 
+    async function syncStatus(week, aufgabe, status) {
+      // hier könnte ein echter Server-Request stehen (API, Firebase etc.)
+      // Für Demo: Speichern in localStorage + BroadcastChannel für alle Tabs
+      localStorage.setItem(`done_${week}_${aufgabe}`, status);
+      const bc = new BroadcastChannel("putzplan_sync");
+      bc.postMessage({week, aufgabe, status});
+    }
+
     function renderPlan(week) {
       document.getElementById("kw").textContent = "Kalenderwoche (KW) " + week;
       const assignments = getAssignments(week);
@@ -143,7 +144,6 @@
         div.className = "task";
         div.innerHTML = `<h2>${aufgabe}</h2><p><strong>${person}</strong></p>`;
 
-        // Zustand aus localStorage laden
         const storageKey = `done_${week}_${aufgabe}`;
         if (localStorage.getItem(storageKey) === "true") {
           div.classList.add("done");
@@ -153,7 +153,7 @@
         button.textContent = "Aufgabe abgeschlossen";
         button.onclick = () => {
           div.classList.add("done");
-          localStorage.setItem(storageKey, "true");
+          syncStatus(week, aufgabe, "true");
         };
 
         div.appendChild(button);
@@ -200,13 +200,22 @@
         });
 
         y += 4;
-        if (y > 270) { // neue Seite
+        if (y > 270) {
           doc.addPage();
           y = 20;
         }
       }
 
       doc.save("Putzplan.pdf");
+    };
+
+    // Synchronisation zwischen Tabs/Geräten (nur lokal simuliert)
+    const bc = new BroadcastChannel("putzplan_sync");
+    bc.onmessage = (e) => {
+      if (e.data) {
+        localStorage.setItem(`done_${e.data.week}_${e.data.aufgabe}`, e.data.status);
+        if (e.data.week === currentWeek) renderPlan(currentWeek);
+      }
     };
 
     renderPlan(currentWeek);
