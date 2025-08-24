@@ -52,8 +52,7 @@
       margin: 15px auto;
       border-radius: 10px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      width: 90%;
-      max-width: 350px;
+      width: 300px;
       text-align: center;
       transition: background 0.3s;
     }
@@ -93,12 +92,26 @@
 
   <div id="plan"></div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB8FXE7QrKU5ExoIQjphfgRRggoCVlwed0",
+      authDomain: "putzplan-wg.firebaseapp.com",
+      projectId: "putzplan-wg",
+      storageBucket: "putzplan-wg.firebasestorage.app",
+      messagingSenderId: "190775803053",
+      appId: "1:190775803053:web:c76840da3ad7df763d1a24",
+      measurementId: "G-F93DGZ77ZL"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
     const mitbewohner = ["Max", "Karol", "Louis", "Andreas"];
     const aufgaben = ["Bad Putzen", "Küche Putzen"];
 
-    // Kalenderwoche berechnen
     Date.prototype.getWeekNumber = function() {
       const d = new Date(Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()));
       const dayNum = d.getUTCDay() || 7;
@@ -114,46 +127,46 @@
       const startIndex = week % mitbewohner.length;
       let available = [...mitbewohner];
       let result = [];
-
       aufgaben.forEach((aufgabe, i) => {
         const index = (startIndex + i) % available.length;
         const person = available[index];
         result.push({ aufgabe, person });
         available.splice(index, 1);
       });
-
       return result;
     }
 
-    async function syncStatus(week, aufgabe, status) {
-      // hier könnte ein echter Server-Request stehen (API, Firebase etc.)
-      // Für Demo: Speichern in localStorage + BroadcastChannel für alle Tabs
-      localStorage.setItem(`done_${week}_${aufgabe}`, status);
-      const bc = new BroadcastChannel("putzplan_sync");
-      bc.postMessage({week, aufgabe, status});
+    async function markTaskDone(week, aufgabe) {
+      const taskDoc = doc(db, "tasks", `week_${week}`);
+      await setDoc(taskDoc, { [aufgabe]: true }, { merge: true });
     }
 
-    function renderPlan(week) {
+    async function getTaskStatus(week) {
+      const taskDoc = doc(db, "tasks", `week_${week}`);
+      const docSnap = await getDoc(taskDoc);
+      return docSnap.exists() ? docSnap.data() : {};
+    }
+
+    async function renderPlan(week) {
       document.getElementById("kw").textContent = "Kalenderwoche (KW) " + week;
       const assignments = getAssignments(week);
       const container = document.getElementById("plan");
       container.innerHTML = "";
+
+      const status = await getTaskStatus(week);
 
       assignments.forEach(({aufgabe, person}) => {
         const div = document.createElement("div");
         div.className = "task";
         div.innerHTML = `<h2>${aufgabe}</h2><p><strong>${person}</strong></p>`;
 
-        const storageKey = `done_${week}_${aufgabe}`;
-        if (localStorage.getItem(storageKey) === "true") {
-          div.classList.add("done");
-        }
+        if(status[aufgabe]) div.classList.add("done");
 
         const button = document.createElement("button");
         button.textContent = "Aufgabe abgeschlossen";
-        button.onclick = () => {
+        button.onclick = async () => {
           div.classList.add("done");
-          syncStatus(week, aufgabe, "true");
+          await markTaskDone(week, aufgabe);
         };
 
         div.appendChild(button);
@@ -178,7 +191,7 @@
       renderPlan(currentWeek);
     };
 
-    document.getElementById("export").onclick = () => {
+    document.getElementById("export").onclick = async () => {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       let y = 20;
@@ -192,8 +205,9 @@
         y += 8;
 
         const assignments = getAssignments(w);
+        const status = await getTaskStatus(w);
         assignments.forEach(({aufgabe, person}) => {
-          const done = localStorage.getItem(`done_${w}_${aufgabe}`) === "true" ? "✔ erledigt" : "✘ offen";
+          const done = status[aufgabe] ? "✔ erledigt" : "✘ offen";
           doc.setFontSize(12);
           doc.text(`- ${aufgabe}: ${person} [${done}]`, 25, y);
           y += 6;
@@ -205,20 +219,11 @@
           y = 20;
         }
       }
-
       doc.save("Putzplan.pdf");
-    };
-
-    // Synchronisation zwischen Tabs/Geräten (nur lokal simuliert)
-    const bc = new BroadcastChannel("putzplan_sync");
-    bc.onmessage = (e) => {
-      if (e.data) {
-        localStorage.setItem(`done_${e.data.week}_${e.data.aufgabe}`, e.data.status);
-        if (e.data.week === currentWeek) renderPlan(currentWeek);
-      }
     };
 
     renderPlan(currentWeek);
   </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </body>
 </html>
