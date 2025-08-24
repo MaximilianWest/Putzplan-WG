@@ -5,75 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wohnung Putzplan</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      background: #f5f5f5;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    .controls {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 15px;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
-    }
-    .extra-controls {
-      display: flex;
-      justify-content: center;
-      gap: 15px;
-      margin-bottom: 25px;
-      flex-wrap: wrap;
-    }
-    .kw-label {
-      font-size: 20px;
-      font-weight: bold;
-    }
-    .arrow, .ctrl-btn {
-      cursor: pointer;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      padding: 6px 12px;
-      background: #2196f3;
-      color: white;
-      transition: background 0.2s;
-    }
-    .arrow:hover, .ctrl-btn:hover {
-      background: #1976d2;
-    }
-    .task {
-      background: white;
-      padding: 20px;
-      margin: 15px auto;
-      border-radius: 10px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      width: 300px;
-      text-align: center;
-      transition: background 0.3s;
-    }
-    .task.done {
-      background: #c8e6c9;
-    }
-    button {
-      margin-top: 10px;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 8px;
-      background: #2196f3;
-      color: white;
-      cursor: pointer;
-      font-size: 14px;
-      width: 100%;
-      max-width: 250px;
-    }
-    button:hover {
-      background: #1976d2;
-    }
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+    h1 { text-align: center; margin-bottom: 10px; }
+    .controls, .extra-controls { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin-bottom: 10px; }
+    .kw-label { font-size: 20px; font-weight: bold; }
+    .arrow, .ctrl-btn { cursor: pointer; font-size: 16px; border: none; border-radius: 6px; padding: 6px 12px; background: #2196f3; color: white; transition: background 0.2s; }
+    .arrow:hover, .ctrl-btn:hover { background: #1976d2; }
+    .task { background: white; padding: 20px; margin: 15px auto; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; text-align: center; transition: background 0.3s; }
+    .task.done { background: #c8e6c9; }
+    button { margin-top: 10px; padding: 10px 15px; border: none; border-radius: 8px; background: #2196f3; color: white; cursor: pointer; font-size: 14px; width: 100%; max-width: 250px; }
+    button:hover { background: #1976d2; }
   </style>
 </head>
 <body>
@@ -94,7 +35,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+    import { getFirestore, doc, onSnapshot, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB8FXE7QrKU5ExoIQjphfgRRggoCVlwed0",
@@ -122,6 +63,7 @@
 
     const thisWeek = new Date().getWeekNumber();
     let currentWeek = thisWeek;
+    let unsubscribe = null;
 
     function getAssignments(week) {
       const startIndex = week % mitbewohner.length;
@@ -136,60 +78,40 @@
       return result;
     }
 
-    async function markTaskDone(week, aufgabe) {
-      const taskDoc = doc(db, "tasks", `week_${week}`);
-      await setDoc(taskDoc, { [aufgabe]: true }, { merge: true });
-    }
-
-    async function getTaskStatus(week) {
-      const taskDoc = doc(db, "tasks", `week_${week}`);
-      const docSnap = await getDoc(taskDoc);
-      return docSnap.exists() ? docSnap.data() : {};
-    }
-
-    async function renderPlan(week) {
+    function renderPlan(week) {
       document.getElementById("kw").textContent = "Kalenderwoche (KW) " + week;
       const assignments = getAssignments(week);
       const container = document.getElementById("plan");
       container.innerHTML = "";
 
-      const status = await getTaskStatus(week);
+      if (unsubscribe) unsubscribe();
+      const taskDoc = doc(db, "tasks", `week_${week}`);
 
-      assignments.forEach(({aufgabe, person}) => {
-        const div = document.createElement("div");
-        div.className = "task";
-        div.innerHTML = `<h2>${aufgabe}</h2><p><strong>${person}</strong></p>`;
+      unsubscribe = onSnapshot(taskDoc, (docSnap) => {
+        const status = docSnap.exists() ? docSnap.data() : {};
+        container.innerHTML = "";
+        assignments.forEach(({aufgabe, person}) => {
+          const div = document.createElement("div");
+          div.className = "task";
+          div.innerHTML = `<h2>${aufgabe}</h2><p><strong>${person}</strong></p>`;
+          if (status[aufgabe]) div.classList.add("done");
 
-        if(status[aufgabe]) div.classList.add("done");
+          const button = document.createElement("button");
+          button.textContent = "Aufgabe abgeschlossen";
+          button.onclick = async () => {
+            div.classList.add("done");
+            await setDoc(taskDoc, { [aufgabe]: true }, { merge: true });
+          };
 
-        const button = document.createElement("button");
-        button.textContent = "Aufgabe abgeschlossen";
-        button.onclick = async () => {
-          div.classList.add("done");
-          await markTaskDone(week, aufgabe);
-        };
-
-        div.appendChild(button);
-        container.appendChild(div);
+          div.appendChild(button);
+          container.appendChild(div);
+        });
       });
     }
 
-    document.getElementById("prev").onclick = () => {
-      currentWeek--;
-      if (currentWeek < 1) currentWeek = 52;
-      renderPlan(currentWeek);
-    };
-
-    document.getElementById("next").onclick = () => {
-      currentWeek++;
-      if (currentWeek > 52) currentWeek = 1;
-      renderPlan(currentWeek);
-    };
-
-    document.getElementById("today").onclick = () => {
-      currentWeek = thisWeek;
-      renderPlan(currentWeek);
-    };
+    document.getElementById("prev").onclick = () => { currentWeek--; if(currentWeek<1)currentWeek=52; renderPlan(currentWeek); };
+    document.getElementById("next").onclick = () => { currentWeek++; if(currentWeek>52)currentWeek=1; renderPlan(currentWeek); };
+    document.getElementById("today").onclick = () => { currentWeek=thisWeek; renderPlan(currentWeek); };
 
     document.getElementById("export").onclick = async () => {
       const { jsPDF } = window.jspdf;
@@ -205,7 +127,10 @@
         y += 8;
 
         const assignments = getAssignments(w);
-        const status = await getTaskStatus(w);
+        const taskDoc = doc(db, "tasks", `week_${w}`);
+        const docSnap = await getDoc(taskDoc);
+        const status = docSnap.exists() ? docSnap.data() : {};
+
         assignments.forEach(({aufgabe, person}) => {
           const done = status[aufgabe] ? "✔ erledigt" : "✘ offen";
           doc.setFontSize(12);
@@ -214,11 +139,9 @@
         });
 
         y += 4;
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
+        if (y > 270) { doc.addPage(); y=20; }
       }
+
       doc.save("Putzplan.pdf");
     };
 
